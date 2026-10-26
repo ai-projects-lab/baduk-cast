@@ -143,7 +143,7 @@
       if (m.problem) { $('#problem .t').textContent = m.problem.title; $('#problem .d').textContent = m.problem.text; }
       const v = m.video || {};
       if (v.id && v.id !== playerId) loadVideo(v.id);
-      if (v.id) want = { t: +v.t || 0, paused: (Date.now() - lastToggle < 1500 && want) ? want.paused : !!v.paused, duration: +v.duration || 0, at: Date.now() };   // a remote press wins until the phone has caught up
+      if (v.id) want = { t: (Date.now() - lastSeek < 1500 && want) ? want.t + (want.paused ? 0 : (Date.now() - want.at) / 1000) : (+v.t || 0), paused: (Date.now() - lastToggle < 1500 && want) ? want.paused : !!v.paused, duration: +v.duration || 0, at: Date.now() };   // a remote press wins until the phone has caught up
       $('#status').textContent = m.mode === 'problem' ? 'Problem in progress' : (v.paused ? 'Paused on the phone' : 'Playing');
       sync();
     }
@@ -155,7 +155,17 @@
     phones.forEach(c => { try { if (c.state === 'connected') c.send(msg); } catch (e) {} });
     if (location.hash === '#test' && window.opener) window.opener.postMessage(msg, SITE_ORIGIN);
   };
-  function remote(action) {
+  function remote(action, by) {
+    if (action === 'seek') {               // left/right: jump in the clip; repeated presses add up
+      if (!want) return;
+      const now = want.t + (want.paused ? 0 : (Date.now() - want.at) / 1000);
+      const t = Math.max(0, Math.min(want.duration || Infinity, now + by));
+      want.t = t; want.at = Date.now(); lastSeek = Date.now(); lastToggle = Date.now();
+      toPhone({ type: 'control', action: 'seek', t });
+      vimeo('setCurrentTime', t); tv.t = t;
+      showToast((by < 0 ? '⏪ ' : '⏩ ') + fmt(t)); progress();
+      return;
+    }
     if (Date.now() - lastToggle < 400) return;   // one press can arrive as key + media event
     lastToggle = Date.now();
     if (action === 'toggle') action = want && !want.paused ? 'pause' : 'play';
@@ -167,6 +177,8 @@
   document.addEventListener('keydown', e => {
     const k = e.key;
     if (['Enter', ' ', 'MediaPlayPause', 'k', 'Select'].includes(k) || e.keyCode === 179) { e.preventDefault(); remote('toggle'); }
+    else if (k === 'ArrowLeft' || k === 'MediaRewind' || k === 'MediaTrackPrevious' || e.keyCode === 412) { e.preventDefault(); remote('seek', -10); }
+    else if (k === 'ArrowRight' || k === 'MediaFastForward' || k === 'MediaTrackNext' || e.keyCode === 417) { e.preventDefault(); remote('seek', 10); }
     else if (k === 'MediaPlay' || e.keyCode === 415) { e.preventDefault(); remote('play'); }
     else if (k === 'MediaPause' || k === 'MediaStop' || e.keyCode === 19 || e.keyCode === 413) { e.preventDefault(); remote('pause'); }
   });
@@ -174,6 +186,8 @@
     try {
       navigator.mediaSession.setActionHandler('play', () => remote('play'));
       navigator.mediaSession.setActionHandler('pause', () => remote('pause'));
+      navigator.mediaSession.setActionHandler('seekbackward', () => remote('seek', -10));
+      navigator.mediaSession.setActionHandler('seekforward', () => remote('seek', 10));
     } catch (e) {}
   }
   const toast = document.createElement('div');

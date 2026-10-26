@@ -17,13 +17,15 @@
   bar.id = 'baduk-cast-bar';
   bar.innerHTML = `
     <style>
-      #baduk-cast-bar{position:fixed;right:10px;bottom:10px;z-index:2147483647;display:flex;gap:6px;align-items:center;
+      #baduk-cast-bar{position:fixed;right:10px;bottom:10px;z-index:2147483647;display:flex;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100vw - 20px);gap:6px;align-items:center;
         font:14px/1.2 system-ui,sans-serif;background:#1d1a16;color:#f3e6c8;padding:6px;border-radius:12px;box-shadow:0 4px 16px #0006}
-      #baduk-cast-bar button{font:inherit;border:0;border-radius:8px;padding:9px 12px;background:#3a332a;color:#f3e6c8}
+      #baduk-cast-bar button{font:inherit;border:0;border-radius:8px;padding:9px 10px;background:#3a332a;color:#f3e6c8}
       #baduk-cast-bar button.on{background:#e0b85a;color:#1d1a16}
       #baduk-cast-bar .st{padding:0 4px;opacity:.8;max-width:9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     </style>
     <button data-a="cast">📺 Cast</button>
+    <button data-a="back">⏪ 10</button>
+    <button data-a="fwd">10 ⏩</button>
     <button data-a="face" class="on">🙂 Face</button>
     <span class="st">not connected</span>
     <button data-a="hide" title="Hide">✕</button>`;
@@ -34,6 +36,10 @@
     if (a === 'cast') startCast(e.shiftKey);
     if (a === 'face') { face = !face; e.target.classList.toggle('on', face); push(true); }
     if (a === 'hide') bar.style.display = 'none';
+    if (a === 'back' || a === 'fwd') {
+      const t = Math.max(0, Math.min(vimeoState.duration || Infinity, vimeoState.t + (a === 'back' ? -10 : 10)));
+      vimeo('setCurrentTime', t); vimeoState.t = t; push(true);
+    }
   });
 
   // ---------- connection ----------
@@ -57,6 +63,7 @@
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
     if (m.type === 'hello') { lastBoard = ''; lastKey = ''; push(true); }
     if (m.type === 'control' && (m.action === 'play' || m.action === 'pause')) { vimeo(m.action); setTimeout(() => push(true), 1000); }   // TV remote
+    if (m.type === 'control' && m.action === 'seek' && isFinite(m.t)) { vimeo('setCurrentTime', Math.max(0, +m.t)); vimeoState.t = +m.t; }
   };
   window.addEventListener('message', e => { if (e.origin === new URL(RECEIVER).origin) onHello(e.data); });
   function wire(c) {
