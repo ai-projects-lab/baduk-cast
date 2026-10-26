@@ -6,7 +6,7 @@
   const BASE = window.__badukCastBase || (document.currentScript ? document.currentScript.src : location.href);
   const RECEIVER = new URL('tv.html', BASE).href;
   const SITE = 'https://awesomebaduk.com/';
-  const APP_ID = '';                              // Google Cast application ID of tv.html (cast.google.com/publish)
+  const APP_ID = '71DA1E68';                            // Google Cast application ID of tv.html (cast.google.com/publish)
   const NS = 'urn:x-cast:io.github.ai-projects-lab.badukcast';
   let conn = null;            // Cast session wrapper or test window
   let face = true;            // show teacher video on the TV
