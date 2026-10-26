@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Baduk Cast TV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;600&family=Montserrat:wght@600;700&display=swap">
+<style>
+  :root { --bg:#15120e; --panel:#221d17; --ink:#f3e6c8; --muted:#b7a789; --accent:#e0b85a; --wood:#dcb35c; --pad:3vh; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink); font-family:'Roboto Slab',Georgia,serif; overflow:hidden; }
+  #stage { height:100vh; display:flex; gap:var(--pad); padding:var(--pad); align-items:stretch; justify-content:center; }
+  #boardWrap { height:calc(100vh - 2*var(--pad)); aspect-ratio:1; flex:none; background:var(--wood);
+    border-radius:6px; box-shadow:0 1.5vh 5vh #000a, inset 0 0 0 1px #0002; padding:1.2vh; }
+  #boardWrap svg { width:100%; height:100%; display:block; }
+  #side { flex:0 1 34vw; min-width:0; display:flex; flex-direction:column; gap:2.4vh; }
+  body.noface:not(.problem) #side { flex-basis:22vw; }
+  h1 { font:700 3.4vh/1.15 Montserrat,system-ui,sans-serif; margin:0; text-wrap:balance; }
+  .label { font:600 1.6vh Montserrat,system-ui,sans-serif; letter-spacing:.12em; text-transform:uppercase; color:var(--accent); }
+  #faceBox { width:100%; aspect-ratio:4/3; border-radius:6px; overflow:hidden; background:#000; box-shadow:0 1vh 3vh #0008; }
+  #faceBox iframe { width:100%; height:100%; border:0; display:block; }
+  /* face off: keep the player running for the sound, but out of sight */
+  body.noface #faceBox, body.problem #faceBox { position:fixed; width:2px; height:2px; left:0; bottom:0; opacity:0; pointer-events:none; }
+  #problem { display:none; background:var(--panel); border-radius:6px; padding:2.6vh; }
+  body.problem #problem { display:block; }
+  #problem .t { font:700 3.2vh Montserrat,system-ui,sans-serif; margin:.6vh 0 1.4vh; }
+  #problem .d { font-size:2.4vh; line-height:1.45; color:var(--ink); white-space:pre-line; }
+  #problem .hint { margin-top:2vh; font-size:1.9vh; color:var(--muted); }
+  #status { margin-top:auto; font-size:1.7vh; color:var(--muted); }
+  #splash { position:fixed; inset:0; display:grid; place-items:center; text-align:center; background:var(--bg); }
+  #splash h2 { font:700 5vh Montserrat,system-ui,sans-serif; margin:0 0 2vh; }
+  #splash p { color:var(--muted); font-size:2.4vh; margin:0; }
+  #sound { position:fixed; left:50%; top:4vh; transform:translateX(-50%); display:none; background:var(--accent); color:#1d1a16;
+    font:600 2vh Montserrat,system-ui,sans-serif; padding:1.4vh 2.4vh; border-radius:999px; border:0; cursor:pointer; }
+</style>
+</head>
+<body class="">
+<div id="stage">
+  <div id="boardWrap"></div>
+  <div id="side">
+    <div class="label">Awesome Baduk</div>
+    <h1 id="lesson"></h1>
+    <div id="faceBox"></div>
+    <div id="problem">
+      <div class="label">Problem</div>
+      <div class="t"></div>
+      <div class="d"></div>
+      <div class="hint">Solve it on your phone. The board here follows your moves.</div>
+    </div>
+    <div id="status">Waiting for the phone…</div>
+  </div>
+</div>
+<div id="splash"><div><h2>Baduk Cast</h2><p>Connected. Open a lesson on your phone.</p></div></div>
+<button id="sound">Click to turn on sound</button>
+<script>
+(() => {
+  const SITE_ORIGIN = 'https://awesomebaduk.com';
+  const $ = s => document.querySelector(s);
+  let player = null, playerId = null, tv = { t: 0, paused: true }, want = null, lastSeek = 0;
+
+  // ---------- board (sanitised copy of the site's SVG) ----------
+  function showBoard(svgText) {
+    if (!/^<svg[^>]*\sxmlns=/.test(svgText)) svgText = svgText.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+    if (/xlink:/.test(svgText) && !/xmlns:xlink=/.test(svgText)) svgText = svgText.replace(/^<svg/, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
+    const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+    const svg = doc.documentElement;
+    if (!svg || svg.nodeName !== 'svg') return;
+    svg.querySelectorAll('script,foreignObject,iframe,a').forEach(n => n.remove());
+    svg.querySelectorAll('*').forEach(n => [...n.attributes].forEach(a => {
+      if (/^on/i.test(a.name)) n.removeAttribute(a.name);
+      if (/href$/i.test(a.name) && !(a.value.startsWith(SITE_ORIGIN + '/') || a.value.startsWith('#'))) n.removeAttribute(a.name);
+    }));
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    $('#boardWrap').replaceChildren(document.importNode(svg, true));
+    $('#splash').style.display = 'none';
+  }
+
+  // ---------- teacher video (Vimeo, follows the phone) ----------
+  const vimeo = (method, value) => player && player.contentWindow &&
+    player.contentWindow.postMessage(JSON.stringify(value === undefined ? { method } : { method, value }), 'https://player.vimeo.com');
+  function loadVideo(id) {
+    playerId = id;
+    if (!id) { $('#faceBox').replaceChildren(); player = null; return; }
+    player = document.createElement('iframe');
+    player.allow = 'autoplay; fullscreen';
+    player.src = `https://player.vimeo.com/video/${encodeURIComponent(id)}?autoplay=1&controls=0&title=0&byline=0&portrait=0&dnt=1`;
+    $('#faceBox').replaceChildren(player);
+  }
+  window.addEventListener('message', e => {
+    if (e.origin === 'https://player.vimeo.com') {
+      let d; try { d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch (err) { return; }
+      if (d.method === 'getCurrentTime') tv.t = +d.value || 0;
+      if (d.method === 'getPaused') tv.paused = !!d.value;
+      if (d.event === 'ready') { vimeo('setVolume', 1); sync(); }
+      return;
+    }
+    if (e.origin === SITE_ORIGIN && location.hash === '#test') handle(e.data);   // desktop test mode
+  });
+  setInterval(() => { if (player) { vimeo('getCurrentTime'); vimeo('getPaused'); } }, 500);
+
+  function sync() {
+    if (!want || !player) return;
+    const shouldPause = want.paused || document.body.classList.contains('problem');
+    if (shouldPause && !tv.paused) vimeo('pause');
+    if (!shouldPause && tv.paused) vimeo('play');
+    const target = want.t + (want.paused ? 0 : (Date.now() - want.at) / 1000);
+    if (Math.abs(tv.t - target) > 1.5 && Date.now() - lastSeek > 3000) { lastSeek = Date.now(); vimeo('setCurrentTime', target); }
+    // autoplay with sound refused (desktop test window): ask for one click
+    $('#sound').style.display = (!shouldPause && tv.paused && Date.now() - lastSeek > 4000) ? 'block' : 'none';
+  }
+  $('#sound').onclick = () => { vimeo('play'); $('#sound').style.display = 'none'; };
+  setInterval(sync, 1000);
+
+  // ---------- messages from the phone ----------
+  function handle(raw) {
+    let m; try { m = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { return; }
+    if (m.type === 'board' && typeof m.svg === 'string') showBoard(m.svg);
+    if (m.type === 'state') {
+      $('#lesson').textContent = m.lesson || '';
+      document.body.classList.toggle('noface', !m.face);
+      document.body.classList.toggle('problem', m.mode === 'problem');
+      if (m.problem) { $('#problem .t').textContent = m.problem.title; $('#problem .d').textContent = m.problem.text; }
+      const v = m.video || {};
+      if (v.id && v.id !== playerId) loadVideo(v.id);
+      if (v.id) want = { t: +v.t || 0, paused: !!v.paused, at: Date.now() };
+      $('#status').textContent = m.mode === 'problem' ? 'Problem in progress' : (v.paused ? 'Paused on the phone' : 'Playing');
+      sync();
+    }
+  }
+  if (location.hash === '#test' && window.opener) window.opener.postMessage(JSON.stringify({ type: 'hello' }), SITE_ORIGIN);
+  if (navigator.presentation && navigator.presentation.receiver) {
+    navigator.presentation.receiver.connectionList.then(list => {
+      const add = c => { c.onmessage = e => handle(e.data); c.send(JSON.stringify({ type: 'hello' })); };
+      list.connections.forEach(add);
+      list.onconnectionavailable = e => add(e.connection);
+    });
+  }
+})();
+</script>
+</body>
+</html>

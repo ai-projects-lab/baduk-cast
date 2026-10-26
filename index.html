@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Baduk Cast</title>
+<style>
+  :root { --bg:#f6f0e2; --ink:#221d17; --muted:#6b5f4c; --accent:#b8862b; --card:#fffaf0; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#15120e; --ink:#f3e6c8; --muted:#b7a789; --accent:#e0b85a; --card:#221d17; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 Georgia,serif; }
+  main { max-width:640px; margin:0 auto; padding:24px max(16px, env(safe-area-inset-left)) 48px; }
+  h1 { font:700 28px/1.2 system-ui,sans-serif; margin:8px 0 4px; }
+  .sub { color:var(--muted); margin:0 0 24px; }
+  ol { padding-left:22px; } li { margin:10px 0; }
+  textarea { width:100%; box-sizing:border-box; height:90px; font:12px/1.4 ui-monospace,monospace; background:var(--card); color:var(--ink);
+    border:1px solid #0003; border-radius:8px; padding:8px; }
+  button { font:600 15px system-ui,sans-serif; background:var(--accent); color:#1d1a16; border:0; border-radius:8px; padding:10px 16px; margin-top:8px; }
+  code { background:var(--card); padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Baduk Cast</h1>
+  <p class="sub">Shows the Awesome Baduk board (and the teacher, if you like) on your TV. Problems stay on your phone.</p>
+  <h2>One-time setup (Android Chrome)</h2>
+  <ol>
+    <li>Copy this code:
+      <textarea id="code" readonly></textarea>
+      <button id="copy">Copy code</button></li>
+    <li>In Chrome, bookmark any page (☆), then open <b>Bookmarks</b>, edit the new bookmark: name it <code>baduk</code> and replace the URL with the copied code. Save.</li>
+  </ol>
+  <h2>Each lesson</h2>
+  <ol>
+    <li>Open the lesson on awesomebaduk.com (logged in, as usual).</li>
+    <li>Tap the address bar, type <code>baduk</code> and tap the bookmark with the star in the suggestions. A small bar appears at the bottom right.</li>
+    <li>Tap <b>📺 Cast</b> and choose your TV. The phone video goes quiet; sound plays on the TV.</li>
+    <li><b>🙂 Face</b> switches the teacher video on the TV on or off.</li>
+  </ol>
+  <p class="sub">Keep the phone screen on during the video: the TV follows the phone's video position.</p>
+</main>
+<script>
+  const src = new URL('sender.js', location.href).href;
+  const code = `javascript:(()=>{const s=document.createElement('script');s.src='${src}?v='+Date.now();document.body.appendChild(s)})()`;
+  const ta = document.getElementById('code'); ta.value = code;
+  document.getElementById('copy').onclick = async e => {
+    try { await navigator.clipboard.writeText(code); e.target.textContent = 'Copied'; }
+    catch (err) { ta.focus(); ta.select(); e.target.textContent = 'Select all and copy'; }
+  };
+</script>
+</body>
+</html>
