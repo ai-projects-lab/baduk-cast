@@ -8,7 +8,7 @@
   const SITE = 'https://awesomebaduk.com/';
   let conn = null;            // PresentationConnection or test window
   let face = true;            // show teacher video on the TV
-  let vimeoState = { id: null, t: 0, paused: true };
+  let vimeoState = { id: null, t: 0, paused: true, duration: 0 };
   let lastBoard = '';
   let wakeLock = null;
 
@@ -126,11 +126,12 @@
     let d; try { d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch (err) { return; }
     if (d.method === 'getCurrentTime') vimeoState.t = +d.value || 0;
     if (d.method === 'getPaused') vimeoState.paused = !!d.value;
+    if (d.method === 'getDuration') vimeoState.duration = +d.value || 0;
     if (d.event === 'ready' && conn) setPhoneVolume(0);
   });
   setInterval(() => {
     if (!iframe()) return;
-    vimeo('getCurrentTime'); vimeo('getPaused');
+    vimeo('getCurrentTime'); vimeo('getPaused'); vimeo('getDuration');
     if (conn && conn.state === 'connected') vimeo('setVolume', 0);   // new clip iframes start with sound
   }, 500);
 

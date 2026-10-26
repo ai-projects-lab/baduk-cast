@@ -22,6 +22,11 @@
   #faceBox iframe { width:100%; height:100%; border:0; display:block; }
   /* face off: keep the player running for the sound, but out of sight */
   body.noface #faceBox, body.problem #faceBox { position:fixed; width:2px; height:2px; left:0; bottom:0; opacity:0; pointer-events:none; }
+  #progress { display:flex; align-items:center; gap:1.4vh; font:600 1.9vh Montserrat,system-ui,sans-serif; color:var(--muted); font-variant-numeric:tabular-nums; }
+  #progress .track { flex:1; height:.8vh; border-radius:999px; background:#ffffff1f; overflow:hidden; }
+  #progress .fill { height:100%; width:0; background:var(--accent); border-radius:inherit; transition:width .5s linear; }
+  #progress .now { color:var(--ink); }
+  body.problem #progress, body.nodur #progress { display:none; }
   #problem { display:none; background:var(--panel); border-radius:6px; padding:2.6vh; }
   body.problem #problem { display:block; }
   #problem .t { font:700 3.2vh Montserrat,system-ui,sans-serif; margin:.6vh 0 1.4vh; }
@@ -35,13 +40,14 @@
     font:600 2vh Montserrat,system-ui,sans-serif; padding:1.4vh 2.4vh; border-radius:999px; border:0; cursor:pointer; }
 </style>
 </head>
-<body class="">
+<body class="nodur">
 <div id="stage">
   <div id="boardWrap"></div>
   <div id="side">
     <div class="label">Awesome Baduk</div>
     <h1 id="lesson"></h1>
     <div id="faceBox"></div>
+    <div id="progress"><span class="now">0:00</span><div class="track"><div class="fill"></div></div><span class="dur">0:00</span></div>
     <div id="problem">
       <div class="label">Problem</div>
       <div class="t"></div>
@@ -99,6 +105,17 @@
   });
   setInterval(() => { if (player) { vimeo('getCurrentTime'); vimeo('getPaused'); } }, 500);
 
+  const fmt = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; };
+  function progress() {
+    const d = want && want.duration;
+    document.body.classList.toggle('nodur', !d);
+    if (!d) return;
+    const t = Math.min(d, player ? tv.t : want.t);
+    $('#progress .now').textContent = fmt(t);
+    $('#progress .dur').textContent = fmt(d);
+    $('#progress .fill').style.width = (100 * t / d).toFixed(2) + '%';
+  }
+  setInterval(progress, 500);
   function sync() {
     if (!want || !player) return;
     const shouldPause = want.paused || document.body.classList.contains('problem');
@@ -123,7 +140,7 @@
       if (m.problem) { $('#problem .t').textContent = m.problem.title; $('#problem .d').textContent = m.problem.text; }
       const v = m.video || {};
       if (v.id && v.id !== playerId) loadVideo(v.id);
-      if (v.id) want = { t: +v.t || 0, paused: !!v.paused, at: Date.now() };
+      if (v.id) want = { t: +v.t || 0, paused: !!v.paused, duration: +v.duration || 0, at: Date.now() };
       $('#status').textContent = m.mode === 'problem' ? 'Problem in progress' : (v.paused ? 'Paused on the phone' : 'Playing');
       sync();
     }
