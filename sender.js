@@ -53,7 +53,11 @@
       wire(conn);
     } catch (err) { status(err.name === 'NotAllowedError' ? 'cancelled' : 'cast failed: ' + err.name); }
   }
-  const onHello = raw => { try { if (JSON.parse(raw).type === 'hello') { lastBoard = ''; lastKey = ''; push(true); } } catch (e) {} };
+  const onHello = raw => {
+    let m; try { m = JSON.parse(raw); } catch (e) { return; }
+    if (m.type === 'hello') { lastBoard = ''; lastKey = ''; push(true); }
+    if (m.type === 'control' && (m.action === 'play' || m.action === 'pause')) { vimeo(m.action); setTimeout(() => push(true), 1000); }   // TV remote
+  };
   window.addEventListener('message', e => { if (e.origin === new URL(RECEIVER).origin) onHello(e.data); });
   function wire(c) {
     c.onmessage = e => onHello(e.data);

@@ -33,6 +33,9 @@
   #problem .d { font-size:2.4vh; line-height:1.45; color:var(--ink); white-space:pre-line; }
   #problem .hint { margin-top:2vh; font-size:1.9vh; color:var(--muted); }
   #status { margin-top:auto; font-size:1.7vh; color:var(--muted); }
+  #toast { position:fixed; left:50%; top:45%; transform:translate(-50%,-50%); background:#000c; color:var(--ink); font:700 4vh Montserrat,system-ui,sans-serif;
+    padding:2vh 4vh; border-radius:2vh; opacity:0; transition:opacity .25s; pointer-events:none; }
+  #toast.on { opacity:1; }
   #splash { position:fixed; inset:0; display:grid; place-items:center; text-align:center; background:var(--bg); }
   #splash h2 { font:700 5vh Montserrat,system-ui,sans-serif; margin:0 0 2vh; }
   #splash p { color:var(--muted); font-size:2.4vh; margin:0; }
@@ -63,7 +66,7 @@
 (() => {
   const SITE_ORIGIN = 'https://awesomebaduk.com';
   const $ = s => document.querySelector(s);
-  let player = null, playerId = null, tv = { t: 0, paused: true }, want = null, lastSeek = 0;
+  let lastToggle = 0, player = null, playerId = null, tv = { t: 0, paused: true }, want = null, lastSeek = 0;
 
   // ---------- board (sanitised copy of the site's SVG) ----------
   function showBoard(svgText) {
@@ -140,15 +143,49 @@
       if (m.problem) { $('#problem .t').textContent = m.problem.title; $('#problem .d').textContent = m.problem.text; }
       const v = m.video || {};
       if (v.id && v.id !== playerId) loadVideo(v.id);
-      if (v.id) want = { t: +v.t || 0, paused: !!v.paused, duration: +v.duration || 0, at: Date.now() };
+      if (v.id) want = { t: +v.t || 0, paused: (Date.now() - lastToggle < 1500 && want) ? want.paused : !!v.paused, duration: +v.duration || 0, at: Date.now() };   // a remote press wins until the phone has caught up
       $('#status').textContent = m.mode === 'problem' ? 'Problem in progress' : (v.paused ? 'Paused on the phone' : 'Playing');
       sync();
     }
   }
+  // ---------- TV remote: play/pause goes back to the phone (the phone player is the master) ----------
+  const phones = [];
+  const toPhone = obj => {
+    const msg = JSON.stringify(obj);
+    phones.forEach(c => { try { if (c.state === 'connected') c.send(msg); } catch (e) {} });
+    if (location.hash === '#test' && window.opener) window.opener.postMessage(msg, SITE_ORIGIN);
+  };
+  function remote(action) {
+    if (Date.now() - lastToggle < 400) return;   // one press can arrive as key + media event
+    lastToggle = Date.now();
+    if (action === 'toggle') action = want && !want.paused ? 'pause' : 'play';
+    toPhone({ type: 'control', action });
+    if (want) { want.paused = action === 'pause'; want.t = player ? tv.t : want.t; want.at = Date.now(); }
+    showToast(action === 'pause' ? '❚❚  Paused' : '▶  Playing');
+    sync();
+  }
+  document.addEventListener('keydown', e => {
+    const k = e.key;
+    if (['Enter', ' ', 'MediaPlayPause', 'k', 'Select'].includes(k) || e.keyCode === 179) { e.preventDefault(); remote('toggle'); }
+    else if (k === 'MediaPlay' || e.keyCode === 415) { e.preventDefault(); remote('play'); }
+    else if (k === 'MediaPause' || k === 'MediaStop' || e.keyCode === 19 || e.keyCode === 413) { e.preventDefault(); remote('pause'); }
+  });
+  if ('mediaSession' in navigator) {
+    try {
+      navigator.mediaSession.setActionHandler('play', () => remote('play'));
+      navigator.mediaSession.setActionHandler('pause', () => remote('pause'));
+    } catch (e) {}
+  }
+  const toast = document.createElement('div');
+  toast.id = 'toast';
+  document.body.appendChild(toast);
+  let toastTimer = 0;
+  function showToast(t) { toast.textContent = t; toast.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('on'), 1500); }
+
   if (location.hash === '#test' && window.opener) window.opener.postMessage(JSON.stringify({ type: 'hello' }), SITE_ORIGIN);
   if (navigator.presentation && navigator.presentation.receiver) {
     navigator.presentation.receiver.connectionList.then(list => {
-      const add = c => { c.onmessage = e => handle(e.data); c.send(JSON.stringify({ type: 'hello' })); };
+      const add = c => { phones.push(c); c.onmessage = e => handle(e.data); c.send(JSON.stringify({ type: 'hello' })); };
       list.connections.forEach(add);
       list.onconnectionavailable = e => add(e.connection);
     });
