@@ -197,12 +197,25 @@
   function showToast(t) { toast.textContent = t; toast.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('on'), 1500); }
 
   if (location.hash === '#test' && window.opener) window.opener.postMessage(JSON.stringify({ type: 'hello' }), SITE_ORIGIN);
-  if (navigator.presentation && navigator.presentation.receiver) {
-    navigator.presentation.receiver.connectionList.then(list => {
-      const add = c => { phones.push(c); c.onmessage = e => handle(e.data); c.send(JSON.stringify({ type: 'hello' })); };
-      list.connections.forEach(add);
-      list.onconnectionavailable = e => add(e.connection);
-    });
+  // ---------- Google Cast receiver (on the TV) ----------
+  if (location.hash !== '#test') {
+    const NS = 'urn:x-cast:io.github.ai-projects-lab.badukcast';
+    const sc = document.createElement('script');
+    sc.src = 'https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js';
+    sc.onload = () => {
+      const ctx = cast.framework.CastReceiverContext.getInstance();
+      ctx.addCustomMessageListener(NS, e => handle(e.data));
+      ctx.addEventListener(cast.framework.system.EventType.SENDER_CONNECTED, e => {
+        try { ctx.sendCustomMessage(NS, e.senderId, { type: 'hello' }); } catch (err) {}
+      });
+      phones.push({ state: 'connected', send: msg => { try { ctx.sendCustomMessage(NS, undefined, JSON.parse(msg)); } catch (err) {} } });
+      const opts = new cast.framework.CastReceiverOptions();
+      opts.customNamespaces = { [NS]: cast.framework.system.MessageType.JSON };
+      opts.disableIdleTimeout = true;   // no media element: keep the app open during problems and pauses
+      opts.skipPlayersLoad = true;
+      ctx.start(opts);
+    };
+    document.head.appendChild(sc);
   }
 })();
 </script>

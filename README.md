@@ -4,7 +4,7 @@ Personal two-screen viewer for awesomebaduk.com lessons: the TV shows the board 
 
 - `index.html` – install page with the bookmarklet code (open it on the phone).
 - `sender.js` – runs inside the logged-in lesson page on the phone (via the bookmarklet). Copies the board SVG, lesson title, problem text and the Vimeo position to the TV; mutes the phone video while casting.
-- `tv.html` – the page shown on the TV (Chrome Presentation API → Chromecast). Renders a sanitised copy of the board and plays the same public Vimeo clip, kept in sync with the phone (seek if > 1.5 s apart).
+- `tv.html` – the page shown on the TV (Google Cast custom receiver; its app ID goes into `APP_ID` in sender.js). Renders a sanitised copy of the board and plays the same public Vimeo clip, kept in sync with the phone (seek if > 1.5 s apart).
 
 No AwesomeBaduk servers or account data are touched; the TV page receives only what the phone page shows.
 
