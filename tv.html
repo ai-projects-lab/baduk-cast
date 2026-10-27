@@ -102,18 +102,29 @@
   // ---------- teacher video (Vimeo, follows the phone) ----------
   const vimeo = (method, value) => player && player.contentWindow &&
     player.contentWindow.postMessage(JSON.stringify(value === undefined ? { method } : { method, value }), 'https://player.vimeo.com');
-  function loadVideo(id) {
+  let playerAlive = false, playerTries = 0, playerWatch = 0;
+  function loadVideo(id, retry) {
     playerId = id;
+    playerTries = retry ? playerTries + 1 : 0;
+    clearTimeout(playerWatch);
     $('#faceBox').innerHTML = '';
     if (!id) { player = null; return; }
+    playerAlive = false;
     player = document.createElement('iframe');
     player.allow = 'autoplay; fullscreen';
-    player.src = `https://player.vimeo.com/video/${encodeURIComponent(id)}?autoplay=1&controls=0&title=0&byline=0&portrait=0&dnt=1`;
+    player.src = `https://player.vimeo.com/video/${encodeURIComponent(id)}?autoplay=1&controls=0&title=0&byline=0&portrait=0&dnt=1` + (retry ? '&r=' + Date.now() : '');
     $('#faceBox').appendChild(player);
+    // the TV's network sometimes drops a load (ERR_NETWORK_CHANGED): if the player never answers, load it again
+    playerWatch = setTimeout(() => {
+      if (playerAlive || playerId !== id) return;
+      showToast('Reconnecting video…');
+      loadVideo(id, true);
+    }, Math.min(10000 + playerTries * 5000, 30000));
   }
   window.addEventListener('message', e => {
     if (e.origin === 'https://player.vimeo.com') {
       let d; try { d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch (err) { return; }
+      playerAlive = true;
       if (d.method === 'getCurrentTime') tv.t = +d.value || 0;
       if (d.method === 'getPaused') tv.paused = !!d.value;
       if (d.event === 'ready') { vimeo('setVolume', 1); sync(); }
