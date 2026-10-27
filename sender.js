@@ -151,23 +151,37 @@
   }
 
   // ---------- Vimeo (phone player is the master clock) ----------
+  // Messages go to the player as objects, like the site's own player.js sends them: text (JSON string) messages switch
+  // the Vimeo player into an older message mode and the site's board then stops following the video.
+  // We don't poll either; the time comes from the timeupdate events the player sends to the page anyway.
   const vimeo = (method, value) => {
     const f = iframe();
-    if (f && f.contentWindow) f.contentWindow.postMessage(JSON.stringify(value === undefined ? { method } : { method, value }), 'https://player.vimeo.com');
+    if (f && f.contentWindow) f.contentWindow.postMessage(value === undefined ? { method } : { method, value }, 'https://player.vimeo.com');
   };
   function setPhoneVolume(v) { vimeo('setVolume', v); }
+  let lastUpdate = 0, knownFrame = null;
   window.addEventListener('message', e => {
     if (e.origin !== 'https://player.vimeo.com') return;
     let d; try { d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch (err) { return; }
-    if (d.method === 'getCurrentTime') vimeoState.t = +d.value || 0;
-    if (d.method === 'getPaused') vimeoState.paused = !!d.value;
-    if (d.method === 'getDuration') vimeoState.duration = +d.value || 0;
-    if (d.event === 'ready' && conn && conn.state === 'connected') setPhoneVolume(0);
+    if (!d) return;
+    if (d.event === 'timeupdate' && d.data) {
+      vimeoState.t = +d.data.seconds || 0;
+      if (d.data.duration) vimeoState.duration = +d.data.duration;
+      lastUpdate = Date.now(); vimeoState.paused = false;
+    }
+    if (d.event === 'play') vimeoState.paused = false;
+    if (d.event === 'pause' || d.event === 'ended') vimeoState.paused = true;
+    if (d.event === 'ready') { knownFrame = null; }
   });
   setInterval(() => {
-    if (!iframe()) return;
-    vimeo('getCurrentTime'); vimeo('getPaused'); vimeo('getDuration');
-    if (conn && conn.state === 'connected') vimeo('setVolume', 0);   // new clip iframes start with sound
+    const f = iframe();
+    if (!f) return;
+    if (Date.now() - lastUpdate > 1500) vimeoState.paused = true;   // no time updates: the clip is not running
+    if (f !== knownFrame) {          // new clip: listen for play/pause and keep the phone quiet while casting
+      knownFrame = f;
+      ['timeupdate', 'play', 'pause', 'ended'].forEach(ev => vimeo('addEventListener', ev));
+      if (conn && conn.state === 'connected') setPhoneVolume(0);
+    }
   }, 500);
 
   // ---------- push changes ----------
