@@ -71,6 +71,10 @@
     client.subscribe(BadukMqtt.topic(code, 'phone'));
     conn = { state: 'connected', send: m => client.publish(BadukMqtt.topic(code, 'tv'), m), terminate: () => { client.close(); closed('stopped'); } };
     tvSeen = false;
+    const pinger = setInterval(() => {   // repeat until the TV answers (the first ping can beat our own subscription)
+      if (tvSeen || !conn || conn.state !== 'connected') return clearInterval(pinger);
+      client.publish(BadukMqtt.topic(code, 'tv'), JSON.stringify({ type: 'ping' }));
+    }, 2000);
     setTimeout(() => { if (conn && conn.state === 'connected' && !tvSeen) status('TV not found – is the page open with code ' + code + '?'); }, 8000);
   }
   let tvSeen = false;
@@ -85,7 +89,7 @@
 
   const onHello = raw => {
     let m; try { m = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { return; }
-    if (m.type === 'hello') { if (!tvSeen) { tvSeen = true; connected(); } lastBoard = ''; lastKey = ''; push(true); }
+    if (m.type === 'hello') { if (!tvSeen) { tvSeen = true; connected(); } lastBoard = ''; lastKey = ''; imgSent.clear(); push(true); }
     if (m.type === 'control' && (m.action === 'play' || m.action === 'pause')) { vimeo(m.action); setTimeout(() => push(true), 1000); }   // TV remote
     if (m.type === 'control' && m.action === 'seek' && isFinite(m.t)) { vimeo('setCurrentTime', Math.max(0, +m.t)); vimeoState.t = +m.t; }
   };
@@ -171,10 +175,22 @@
   function push(force) {
     if (!conn || conn.state !== 'connected') return;
     const svg = boardSvg();
-    if (force || svg !== lastBoard) { lastBoard = svg; send({ type: 'board', svg }); }
+    if (force || svg !== lastBoard) { lastBoard = svg; sendImages(svg); send({ type: 'board', svg }); }
     const s = state();
     const key = JSON.stringify({ ...s, video: { ...s.video, t: Math.round(s.video.t) } });
     if (force || key !== lastKey) { lastKey = key; send(s); }
+  }
+  // stone images travel with the board, so the TV never has to load anything from awesomebaduk.com itself
+  const imgData = {}, imgSent = new Set();
+  function sendImages(svg) {
+    [...new Set(svg.match(/https:\/\/awesomebaduk\.com\/[^"'\s)]+\.(?:png|jpe?g|gif|svg|webp)/g) || [])].forEach(url => {
+      if (imgSent.has(url)) return;
+      imgSent.add(url);
+      imgData[url] = imgData[url] || fetch(url).then(r => r.blob()).then(b => new Promise(res => {
+        const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b);
+      }));
+      imgData[url].then(data => send({ type: 'img', url, data }), () => { imgSent.delete(url); delete imgData[url]; });
+    });
   }
   let pending = 0;
   new MutationObserver(() => { if (!pending) pending = setTimeout(() => { pending = 0; push(); }, 120); })

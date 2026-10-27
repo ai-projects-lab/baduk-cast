@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Baduk Cast – TV check</title>
+<style>
+  body { margin:0; background:#15120e; color:#f3e6c8; font:24px/1.5 sans-serif; padding:28px 40px; }
+  h1 { font-size:36px; margin:0 0 6px; }
+  .sub { color:#b7a789; font-size:20px; margin:0 0 16px; }
+  table { border-collapse:collapse; }
+  td { padding:4px 18px 4px 0; vertical-align:top; }
+  .ok { color:#7fd17f; font-weight:bold; } .bad { color:#ff7b6b; font-weight:bold; } .wait { color:#e0b85a; }
+  #ua { font-size:16px; color:#b7a789; word-break:break-all; margin-top:12px; }
+  .row { display:flex; margin-top:14px; }
+  .box { width:300px; margin-right:24px; }
+  .box svg, .box iframe { width:300px; height:170px; background:#3a3128; border:0; display:block; }
+  .lab { font-size:18px; color:#b7a789; }
+</style>
+</head>
+<body>
+<h1>Baduk Cast – TV check</h1>
+<p class="sub">Take a photo of this screen and send it. Wait about 10 seconds until nothing says "testing…" any more.</p>
+<table id="t"></table>
+<div class="row">
+  <div class="box"><svg id="s1" viewBox="0 0 200 100"></svg><div class="lab">A: two stones (new style)</div></div>
+  <div class="box"><svg id="s2" viewBox="0 0 200 100"></svg><div class="lab">B: two stones (old style)</div></div>
+  <div class="box"><iframe id="v" allow="autoplay; fullscreen"></iframe><div class="lab">C: Vimeo test video</div></div>
+</div>
+<div id="ua"></div>
+<script>
+(function () {
+  var t = document.getElementById('t');
+  function row(name) {
+    var tr = document.createElement('tr'), a = document.createElement('td'), b = document.createElement('td');
+    a.textContent = name; b.textContent = 'testing…'; b.className = 'wait';
+    tr.appendChild(a); tr.appendChild(b); t.appendChild(tr);
+    var done = false;
+    function set(ok, extra) { if (done) return; done = true; b.textContent = (ok ? '✔ OK' : '✘ blocked') + (extra ? '  ' + extra : ''); b.className = ok ? 'ok' : 'bad'; }
+    setTimeout(function () { set(false, '(timeout)'); }, 10000);
+    return set;
+  }
+  function img(name, url) { var set = row(name), i = new Image(); i.onload = function () { set(true); }; i.onerror = function () { set(false); }; i.src = url + (url.indexOf('?') < 0 ? '?' : '&') + 'x=' + Date.now(); }
+  function script(name, url) { var set = row(name), s = document.createElement('script'); s.onload = function () { set(true); }; s.onerror = function () { set(false); }; s.src = url; document.head.appendChild(s); }
+
+  var d = new Date(), set = row('TV clock');
+  set(d.getFullYear() >= 2026, d.toString().slice(0, 24));
+  script('GitHub (this page)', 'mqtt-lite.js?x=' + Date.now());
+  img('awesomebaduk.com image', 'https://awesomebaduk.com/assets/img/board/black_small.png');
+  img('Google', 'https://www.google.com/favicon.ico');
+  img('vimeo.com', 'https://vimeo.com/favicon.ico');
+  script('player.vimeo.com', 'https://player.vimeo.com/api/player.js');
+  var ws = row('Relay (HiveMQ)');
+  try { var w = new WebSocket('wss://broker.hivemq.com:8884/mqtt', 'mqtt'); w.onopen = function () { ws(true); w.close(); }; w.onerror = function () { ws(false); }; } catch (e) { ws(false, e.message); }
+
+  // stone rendering, using the same picture as data (no network)
+  var c = document.createElement('canvas'); c.width = c.height = 40;
+  var g = c.getContext('2d'); g.fillStyle = '#111'; g.beginPath(); g.arc(20, 20, 18, 0, 7); g.fill();
+  var data = c.toDataURL('image/png'), NS = 'http://www.w3.org/2000/svg', XL = 'http://www.w3.org/1999/xlink';
+  [['s1', false], ['s2', true]].forEach(function (p) {
+    var svg = document.getElementById(p[0]);
+    [40, 120].forEach(function (x) {
+      var im = document.createElementNS(NS, 'image');
+      im.setAttribute('x', x); im.setAttribute('y', 30); im.setAttribute('width', 40); im.setAttribute('height', 40);
+      if (p[1]) im.setAttributeNS(XL, 'xlink:href', data); else im.setAttribute('href', data);
+      svg.appendChild(im);
+    });
+  });
+  document.getElementById('v').src = 'https://player.vimeo.com/video/1233911075?autoplay=1&muted=1&controls=0';
+  document.getElementById('ua').textContent = navigator.userAgent;
+})();
+</script>
+</body>
+</html>

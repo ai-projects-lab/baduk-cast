@@ -73,7 +73,10 @@
   let lastToggle = 0, player = null, playerId = null, tv = { t: 0, paused: true }, want = null, lastSeek = 0;
 
   // ---------- board (sanitised copy of the site's SVG) ----------
+  const images = {};   // stone images sent by the phone (url -> data: URI)
+  let lastSvg = '';
   function showBoard(svgText) {
+    lastSvg = svgText;
     if (!/^<svg[^>]*\sxmlns=/.test(svgText)) svgText = svgText.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
     if (/xlink:/.test(svgText) && !/xmlns:xlink=/.test(svgText)) svgText = svgText.replace(/^<svg/, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
     const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
@@ -84,6 +87,13 @@
       if (/^on/i.test(a.name)) n.removeAttribute(a.name);
       if (/href$/i.test(a.name) && !(a.value.startsWith(SITE_ORIGIN + '/') || a.value.startsWith('#'))) n.removeAttribute(a.name);
     }));
+    svg.querySelectorAll('image').forEach(n => {   // use the phone's copy; set both forms for older TV browsers
+      const h = n.getAttribute('href') || n.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+      const v = images[h] || h;
+      if (!v) return;
+      n.setAttribute('href', v);
+      n.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', v);
+    });
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     const wrap = $('#boardWrap'); wrap.innerHTML = ''; wrap.appendChild(document.importNode(svg, true));
     $('#splash').style.display = 'none';
@@ -142,6 +152,10 @@
     let m; try { m = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { return; }
     if (m.type === 'ping') toPhone({ type: 'hello' });   // phone (re)connected: it resends everything
     if (m.type === 'board' && typeof m.svg === 'string') showBoard(m.svg);
+    if (m.type === 'img' && typeof m.url === 'string' && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(m.data || '')) {
+      images[m.url] = m.data;
+      if (lastSvg) showBoard(lastSvg);
+    }
     if (m.type === 'state') {
       $('#lesson').textContent = m.lesson || '';
       document.body.classList.toggle('noface', !m.face);
