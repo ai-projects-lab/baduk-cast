@@ -1,14 +1,12 @@
 // Baduk Cast – phone side. Loaded into an awesomebaduk.com lesson page by the bookmarklet.
-// Mirrors the board, the lesson state and the Vimeo position to the TV page (Google Cast custom receiver).
+// Mirrors the board, the lesson state and the Vimeo position to the TV page (paired by a code shown on the TV).
 (() => {
   if (window.__badukCast) { window.__badukCast.show(); return; }
 
   const BASE = window.__badukCastBase || (document.currentScript ? document.currentScript.src : location.href);
   const RECEIVER = new URL('tv.html', BASE).href;
   const SITE = 'https://awesomebaduk.com/';
-  const APP_ID = '71DA1E68';                            // Google Cast application ID of tv.html (cast.google.com/publish)
-  const NS = 'urn:x-cast:io.github.ai-projects-lab.badukcast';
-  let conn = null;            // Cast session wrapper or test window
+  let conn = null;            // relay connection or test window
   let face = true;            // show teacher video on the TV
   let vimeoState = { id: null, t: 0, paused: true, duration: 0 };
   let lastBoard = '';
@@ -44,8 +42,8 @@
     }
   });
 
-  // ---------- connection (Google Cast custom receiver; test mode: a second window) ----------
-  // conn = { state: 'connected' | 'closed', send(string), terminate() }
+  // ---------- connection: pairing code shown on the TV page, messages via a public MQTT relay ----------
+  // conn = { state: 'connected' | 'closed', send(string), terminate() }   (test mode: a second window)
   async function startCast(testWindow) {
     if (conn && conn.state === 'connected') { conn.terminate(); return; }
     if (testWindow) {
@@ -54,51 +52,44 @@
       setTimeout(() => connected(), 1500);
       return;
     }
-    if (!APP_ID) { status('no Cast app ID yet'); return; }
-    status('loading Cast…');
-    const ctx = await castContext().catch(err => { status('Cast not available'); return null; });
-    if (!ctx) return;
-    status('choose TV…');
-    ctx.requestSession().catch(err => status(err === 'cancel' ? 'cancelled' : 'cast failed: ' + err));
+    let saved = '';
+    try { saved = localStorage.getItem('badukCastCode') || ''; } catch (e) {}
+    const input = prompt('Code shown on the TV:', saved);
+    if (input === null) return;
+    const code = input.replace(/\D/g, '');
+    if (code.length !== 6) { status('code must have 6 digits'); return; }
+    try { localStorage.setItem('badukCastCode', code); } catch (e) {}
+    status('connecting…');
+    try { await loadScript(new URL('mqtt-lite.js', BASE).href, 'BadukMqtt'); } catch (e) { status('relay script failed'); return; }
+    const client = BadukMqtt.connect({
+      onMessage: (topic, text) => onHello(text),
+      onState: st => {
+        if (st === 'online') { status('looking for TV…'); client.publish(BadukMqtt.topic(code, 'tv'), JSON.stringify({ type: 'ping' })); }
+        else if (conn && conn.state === 'connected') status(st === 'connecting' ? 'reconnecting…' : 'offline, retrying…');
+      }
+    });
+    client.subscribe(BadukMqtt.topic(code, 'phone'));
+    conn = { state: 'connected', send: m => client.publish(BadukMqtt.topic(code, 'tv'), m), terminate: () => { client.close(); closed('stopped'); } };
+    tvSeen = false;
+    setTimeout(() => { if (conn && conn.state === 'connected' && !tvSeen) status('TV not found – is the page open with code ' + code + '?'); }, 8000);
+  }
+  let tvSeen = false;
+  function loadScript(src, globalName) {
+    return new Promise((resolve, reject) => {
+      if (window[globalName]) return resolve();
+      const sc = document.createElement('script');
+      sc.src = src; sc.onload = resolve; sc.onerror = reject;
+      document.head.appendChild(sc);
+    });
   }
 
   const onHello = raw => {
     let m; try { m = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { return; }
-    if (m.type === 'hello') { lastBoard = ''; lastKey = ''; push(true); }
+    if (m.type === 'hello') { if (!tvSeen) { tvSeen = true; connected(); } lastBoard = ''; lastKey = ''; push(true); }
     if (m.type === 'control' && (m.action === 'play' || m.action === 'pause')) { vimeo(m.action); setTimeout(() => push(true), 1000); }   // TV remote
     if (m.type === 'control' && m.action === 'seek' && isFinite(m.t)) { vimeo('setCurrentTime', Math.max(0, +m.t)); vimeoState.t = +m.t; }
   };
   window.addEventListener('message', e => { if (e.origin === new URL(RECEIVER).origin) onHello(e.data); });
-
-  let ctxPromise = null;
-  function castContext() {
-    if (ctxPromise) return ctxPromise;
-    ctxPromise = new Promise((resolve, reject) => {
-      const ready = () => {
-        const ctx = cast.framework.CastContext.getInstance();
-        ctx.setOptions({ receiverApplicationId: APP_ID, autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED });
-        ctx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, e => {
-          const S = cast.framework.SessionState;
-          if (e.sessionState === S.SESSION_STARTED || e.sessionState === S.SESSION_RESUMED) {
-            const session = ctx.getCurrentSession();
-            session.addMessageListener(NS, (ns, msg) => onHello(msg));
-            conn = { state: 'connected', send: m => session.sendMessage(NS, m).catch(() => {}), terminate: () => ctx.endCurrentSession(true) };
-            connected();
-          }
-          if (e.sessionState === S.SESSION_ENDED) closed('stopped');
-        });
-        resolve(ctx);
-      };
-      if (window.cast && cast.framework) return ready();
-      window.__onGCastApiAvailable = ok => ok ? ready() : reject(new Error('cast unavailable'));
-      const sc = document.createElement('script');
-      sc.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
-      sc.onerror = () => reject(new Error('cast script failed'));
-      document.head.appendChild(sc);
-    });
-    return ctxPromise;
-  }
-  if (APP_ID) castContext().catch(() => {});   // resumes a running TV session after a page reload
 
   async function connected() {
     status('on TV');

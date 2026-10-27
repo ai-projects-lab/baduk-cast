@@ -10,20 +10,21 @@
   :root { --bg:#15120e; --panel:#221d17; --ink:#f3e6c8; --muted:#b7a789; --accent:#e0b85a; --wood:#dcb35c; --pad:3vh; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--ink); font-family:'Roboto Slab',Georgia,serif; overflow:hidden; }
-  #stage { height:100vh; display:flex; gap:var(--pad); padding:var(--pad); align-items:stretch; justify-content:center; }
-  #boardWrap { height:calc(100vh - 2*var(--pad)); aspect-ratio:1; flex:none; background:var(--wood);
+  #stage { height:100vh; display:flex; padding:var(--pad); align-items:stretch; justify-content:center; }
+  #boardWrap { height:calc(100vh - 2*var(--pad)); width:calc(100vh - 2*var(--pad)); flex:none; margin-right:var(--pad); background:var(--wood);
     border-radius:6px; box-shadow:0 1.5vh 5vh #000a, inset 0 0 0 1px #0002; padding:1.2vh; }
   #boardWrap svg { width:100%; height:100%; display:block; }
-  #side { flex:0 1 34vw; min-width:0; display:flex; flex-direction:column; gap:2.4vh; }
+  #side { flex:0 1 34vw; min-width:0; display:flex; flex-direction:column; }
+  #side > * + * { margin-top:2.4vh; }
   body.noface:not(.problem) #side { flex-basis:22vw; }
   h1 { font:700 3.4vh/1.15 Montserrat,system-ui,sans-serif; margin:0; text-wrap:balance; }
   .label { font:600 1.6vh Montserrat,system-ui,sans-serif; letter-spacing:.12em; text-transform:uppercase; color:var(--accent); }
-  #faceBox { width:100%; aspect-ratio:4/3; border-radius:6px; overflow:hidden; background:#000; box-shadow:0 1vh 3vh #0008; }
-  #faceBox iframe { width:100%; height:100%; border:0; display:block; }
+  #faceBox { position:relative; width:100%; height:0; padding-top:75%; border-radius:6px; overflow:hidden; background:#000; box-shadow:0 1vh 3vh #0008; }
+  #faceBox iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:0; display:block; }
   /* face off: keep the player running for the sound, but out of sight */
-  body.noface #faceBox, body.problem #faceBox { position:fixed; width:2px; height:2px; left:0; bottom:0; opacity:0; pointer-events:none; }
-  #progress { display:flex; align-items:center; gap:1.4vh; font:600 1.9vh Montserrat,system-ui,sans-serif; color:var(--muted); font-variant-numeric:tabular-nums; }
-  #progress .track { flex:1; height:.8vh; border-radius:999px; background:#ffffff1f; overflow:hidden; }
+  body.noface #faceBox, body.problem #faceBox { position:fixed; width:2px; height:2px; padding-top:0; left:0; bottom:0; opacity:0; pointer-events:none; }
+  #progress { display:flex; align-items:center; font:600 1.9vh Montserrat,system-ui,sans-serif; color:var(--muted); font-variant-numeric:tabular-nums; }
+  #progress .track { flex:1; margin:0 1.4vh; height:.8vh; border-radius:999px; background:#ffffff1f; overflow:hidden; }
   #progress .fill { height:100%; width:0; background:var(--accent); border-radius:inherit; transition:width .5s linear; }
   #progress .now { color:var(--ink); }
   body.problem #progress, body.nodur #progress { display:none; }
@@ -36,7 +37,9 @@
   #toast { position:fixed; left:50%; top:45%; transform:translate(-50%,-50%); background:#000c; color:var(--ink); font:700 4vh Montserrat,system-ui,sans-serif;
     padding:2vh 4vh; border-radius:2vh; opacity:0; transition:opacity .25s; pointer-events:none; }
   #toast.on { opacity:1; }
-  #splash { position:fixed; inset:0; display:grid; place-items:center; text-align:center; background:var(--bg); }
+  #splash { position:fixed; top:0; left:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; text-align:center; background:var(--bg); }
+  #splash .code { font:700 14vh/1 Montserrat,system-ui,sans-serif; letter-spacing:.08em; color:var(--accent); margin:3vh 0; }
+  #splash .small { font-size:2vh; margin-top:3vh; }
   #splash h2 { font:700 5vh Montserrat,system-ui,sans-serif; margin:0 0 2vh; }
   #splash p { color:var(--muted); font-size:2.4vh; margin:0; }
   #sound { position:fixed; left:50%; top:4vh; transform:translateX(-50%); display:none; background:var(--accent); color:#1d1a16;
@@ -60,7 +63,8 @@
     <div id="status">Waiting for the phone…</div>
   </div>
 </div>
-<div id="splash"><div><h2>Baduk Cast</h2><p>Connected. Open a lesson on your phone.</p></div></div>
+<div id="splash"><div><h2>Baduk Cast</h2><p id="splashText">Connected. Open a lesson on your phone.</p><div class="code" id="code"></div><p class="small" id="net"></p></div></div>
+<script src="mqtt-lite.js"></script>
 <button id="sound">Click to turn on sound</button>
 <script>
 (() => {
@@ -81,7 +85,7 @@
       if (/href$/i.test(a.name) && !(a.value.startsWith(SITE_ORIGIN + '/') || a.value.startsWith('#'))) n.removeAttribute(a.name);
     }));
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    $('#boardWrap').replaceChildren(document.importNode(svg, true));
+    const wrap = $('#boardWrap'); wrap.innerHTML = ''; wrap.appendChild(document.importNode(svg, true));
     $('#splash').style.display = 'none';
   }
 
@@ -90,11 +94,12 @@
     player.contentWindow.postMessage(JSON.stringify(value === undefined ? { method } : { method, value }), 'https://player.vimeo.com');
   function loadVideo(id) {
     playerId = id;
-    if (!id) { $('#faceBox').replaceChildren(); player = null; return; }
+    $('#faceBox').innerHTML = '';
+    if (!id) { player = null; return; }
     player = document.createElement('iframe');
     player.allow = 'autoplay; fullscreen';
     player.src = `https://player.vimeo.com/video/${encodeURIComponent(id)}?autoplay=1&controls=0&title=0&byline=0&portrait=0&dnt=1`;
-    $('#faceBox').replaceChildren(player);
+    $('#faceBox').appendChild(player);
   }
   window.addEventListener('message', e => {
     if (e.origin === 'https://player.vimeo.com') {
@@ -135,6 +140,7 @@
   // ---------- messages from the phone ----------
   function handle(raw) {
     let m; try { m = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { return; }
+    if (m.type === 'ping') toPhone({ type: 'hello' });   // phone (re)connected: it resends everything
     if (m.type === 'board' && typeof m.svg === 'string') showBoard(m.svg);
     if (m.type === 'state') {
       $('#lesson').textContent = m.lesson || '';
@@ -143,7 +149,7 @@
       if (m.problem) { $('#problem .t').textContent = m.problem.title; $('#problem .d').textContent = m.problem.text; }
       const v = m.video || {};
       if (v.id && v.id !== playerId) loadVideo(v.id);
-      if (v.id) want = { t: (Date.now() - lastSeek < 1500 && want) ? want.t + (want.paused ? 0 : (Date.now() - want.at) / 1000) : (+v.t || 0), paused: (Date.now() - lastToggle < 1500 && want) ? want.paused : !!v.paused, duration: +v.duration || 0, at: Date.now() };   // a remote press wins until the phone has caught up
+      if (v.id) want = { t: (Date.now() - lastSeek < 1500 && want) ? want.t + (want.paused ? 0 : (Date.now() - want.at) / 1000) : (+v.t || 0), paused: (Date.now() - lastToggle < 3500 && want) ? want.paused : !!v.paused, duration: +v.duration || 0, at: Date.now() };   // a remote press wins until the phone has caught up
       $('#status').textContent = m.mode === 'problem' ? 'Problem in progress' : (v.paused ? 'Paused on the phone' : 'Playing');
       sync();
     }
@@ -197,8 +203,9 @@
   function showToast(t) { toast.textContent = t; toast.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('on'), 1500); }
 
   if (location.hash === '#test' && window.opener) window.opener.postMessage(JSON.stringify({ type: 'hello' }), SITE_ORIGIN);
-  // ---------- Google Cast receiver (on the TV) ----------
-  if (location.hash !== '#test') {
+  // ---------- connection to the phone ----------
+  const isCast = /CrKey/.test(navigator.userAgent);
+  if (isCast) {                                       // Chromecast / Google Cast TV: registered custom receiver
     const NS = 'urn:x-cast:io.github.ai-projects-lab.badukcast';
     const sc = document.createElement('script');
     sc.src = 'https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js';
@@ -216,6 +223,28 @@
       ctx.start(opts);
     };
     document.head.appendChild(sc);
+  } else if (location.hash !== '#test') {             // any TV browser (e.g. Samsung): pairing code over MQTT
+    let code = '';
+    try { code = localStorage.getItem('badukCastCode') || ''; } catch (e) {}
+    if (!/^\d{6}$/.test(code)) {
+      code = String(Math.floor(100000 + Math.random() * 900000));
+      try { localStorage.setItem('badukCastCode', code); } catch (e) {}
+    }
+    $('#splashText').textContent = 'On your phone, tap 📺 and enter this code:';
+    $('#code').textContent = code.slice(0, 3) + ' ' + code.slice(3);
+    let lastFromPhone = 0;
+    const client = BadukMqtt.connect({
+      onMessage: (topic, text) => { lastFromPhone = Date.now(); handle(text); },
+      onState: st => {
+        $('#net').textContent = st === 'online' ? 'Ready. Waiting for the phone…' : (st === 'connecting' ? 'Connecting…' : 'Offline, retrying…');
+        if (st === 'online') client.publish(BadukMqtt.topic(code, 'phone'), JSON.stringify({ type: 'hello' }));
+      }
+    });
+    client.subscribe(BadukMqtt.topic(code, 'tv'));
+    phones.push({ state: 'connected', send: msg => client.publish(BadukMqtt.topic(code, 'phone'), msg) });
+    setInterval(() => {                                  // phone gone for a while: show the code again
+      if (lastFromPhone && Date.now() - lastFromPhone > 20000) { $('#splash').style.display = ''; $('#splashText').textContent = 'Phone disconnected. Tap 📺 on the phone with code:'; }
+    }, 5000);
   }
 })();
 </script>
