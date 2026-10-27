@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Baduk Cast – test</title>
+<style>
+  :root { --bg:#f6f0e2; --ink:#221d17; --muted:#6b5f4c; --accent:#b8862b; --card:#fffaf0; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#15120e; --ink:#f3e6c8; --muted:#b7a789; --accent:#e0b85a; --card:#221d17; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:20px max(16px, env(safe-area-inset-left)) 40px; }
+  h1 { font-size:24px; margin:0 0 6px; }
+  p { color:var(--muted); margin:0 0 16px; }
+  button { display:block; width:100%; font:600 16px system-ui,sans-serif; background:var(--accent); color:#1d1a16; border:0; border-radius:10px; padding:14px; margin:10px 0; }
+  pre { background:var(--card); border-radius:10px; padding:12px; white-space:pre-wrap; word-break:break-word; font:12px/1.45 ui-monospace,monospace; min-height:120px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cast test</h1>
+  <p>Tap “Search TVs”, pick your TV if it appears, then do test 2. Send me a screenshot of the log after each test.</p>
+  <p id="mode"></p>
+  <button id="search">Search TVs</button>
+  <button id="switch"></button>
+  <button id="copy">Copy log</button>
+  <pre id="log"></pre>
+</main>
+<script>
+  const out = document.getElementById('log');
+  const log = (...a) => { out.textContent += new Date().toLocaleTimeString() + '  ' + a.join(' ') + '\n'; };
+  log('Chrome:', (navigator.userAgent.match(/Chrome\/[\d.]+/) || ['?'])[0], '| Android:', (navigator.userAgent.match(/Android [\d.]+/) || ['?'])[0]);
+  // the Cast options can only be set once per page load, so each test runs on its own load (?app=…)
+  const current = new URLSearchParams(location.search).get('app') === 'baduk' ? '71DA1E68' : 'CC1AD845';
+  const other = current === '71DA1E68' ? '' : '?app=baduk';
+  document.getElementById('mode').textContent = current === '71DA1E68' ? 'Test 2 of 2: our Baduk Cast app (71DA1E68)' : "Test 1 of 2: Google's standard video receiver (CC1AD845)";
+  document.getElementById('switch').textContent = current === '71DA1E68' ? 'Back to test 1' : 'Next: test 2 (our app)';
+  document.getElementById('switch').onclick = () => { location.href = location.pathname + other; };
+  let ready = false, ctx = null;
+  window.__onGCastApiAvailable = ok => {
+    log('Cast library loaded:', ok);
+    if (!ok) return;
+    ready = true;
+    ctx = cast.framework.CastContext.getInstance();
+    ctx.setOptions({ receiverApplicationId: current, autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED });
+    log('looking for TVs that can run', current, '| state:', ctx.getCastState());
+    ctx.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, e => log('cast state:', e.castState));
+    ctx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, e => {
+      log('session:', e.sessionState, e.errorCode ? 'error ' + e.errorCode : '');
+      const s = ctx.getCurrentSession();
+      if (s && e.sessionState === 'SESSION_STARTED') {
+        log('connected to:', s.getCastDevice().friendlyName, '| app:', s.getApplicationStatus() || '', current);
+        if (current === 'CC1AD845') {
+          const info = new chrome.cast.media.MediaInfo('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', 'video/mp4');
+          s.loadMedia(new chrome.cast.media.LoadRequest(info)).then(() => log('test video playing on TV'), err => log('loadMedia error:', err));
+        }
+      }
+    });
+  };
+  document.getElementById('search').onclick = () => {
+    if (!ready) { log('Cast library not loaded (yet).'); return; }
+    log('--- search started | state:', ctx.getCastState());
+    ctx.requestSession().then(() => log('requestSession OK'), err => log('requestSession result:', err));
+  };
+  document.getElementById('copy').onclick = async () => { try { await navigator.clipboard.writeText(out.textContent); } catch (e) {} };
+  const s = document.createElement('script');
+  s.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+  s.onerror = () => log('Cast library failed to load');
+  document.head.appendChild(s);
+  setTimeout(() => { if (!ready) log('Cast library did not report ready within 8 s (Chrome without Cast support?)'); }, 8000);
+</script>
+</body>
+</html>
